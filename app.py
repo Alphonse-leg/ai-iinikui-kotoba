@@ -26,7 +26,7 @@ def convert_phrase(user_text: str) -> dict:
     if not api_key:
         raise RuntimeError("GEMINI_API_KEY が設定されていません。.env または環境変数を確認してください。")
 
-    model_name = os.getenv("GEMINI_MODEL", "gemini-2.5-flash").strip()
+    model_name = os.getenv("GEMINI_MODEL", "gemini-3.8-flash").strip()
     prompt = f"""
 あなたは「言い換え名人の猫」です。
 ユーザーの本音や言いにくい言葉を否定せず受け止め、相手に伝わりやすい自然な日本語に言い換えてください。
