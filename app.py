@@ -89,15 +89,15 @@ def convert_phrase(user_text: str) -> dict:
             )
         except errors.ServerError as exc:
             # Gemini may temporarily return 503 when a model is overloaded.
-            # Try the lighter Flash-Lite model once, unless it was already selected.
-            if getattr(exc, "code", None) != 503 or model_name == "gemini-2.5-flash-lite":
+            # Try the currently recommended Flash-Lite model once, unless it was already selected.
+            if getattr(exc, "code", None) != 503 or model_name == "gemini-3.5-flash-lite":
                 raise
             app.logger.warning(
-                "Gemini model %s returned 503; retrying once with gemini-2.5-flash-lite",
+                "Gemini model %s returned 503; retrying once with gemini-3.5-flash-lite",
                 model_name,
             )
             response = client.models.generate_content(
-                model="gemini-2.5-flash-lite",
+                model="gemini-3.5-flash-lite",
                 contents=prompt,
                 config=config,
             )
