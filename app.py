@@ -5,7 +5,7 @@ import re
 from flask import Flask, jsonify, render_template, request, send_from_directory
 from dotenv import load_dotenv
 from google import genai
-from google.genai import types
+from google.genai import types, errors
 
 load_dotenv()
 
@@ -77,14 +77,30 @@ def convert_phrase(user_text: str) -> dict:
 
     client = genai.Client(api_key=api_key)
     try:
-        response = client.models.generate_content(
-            model=model_name,
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                temperature=0.7,
-                response_mime_type="application/json",
-            ),
+        config = types.GenerateContentConfig(
+            temperature=0.7,
+            response_mime_type="application/json",
         )
+        try:
+            response = client.models.generate_content(
+                model=model_name,
+                contents=prompt,
+                config=config,
+            )
+        except errors.ServerError as exc:
+            # Gemini may temporarily return 503 when a model is overloaded.
+            # Try the lighter Flash-Lite model once, unless it was already selected.
+            if getattr(exc, "code", None) != 503 or model_name == "gemini-2.5-flash-lite":
+                raise
+            app.logger.warning(
+                "Gemini model %s returned 503; retrying once with gemini-2.5-flash-lite",
+                model_name,
+            )
+            response = client.models.generate_content(
+                model="gemini-2.5-flash-lite",
+                contents=prompt,
+                config=config,
+            )
         raw = (response.text or "").strip()
         # Defensive cleanup in case a model returns fenced JSON despite the JSON mode.
         raw = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw, flags=re.IGNORECASE)
@@ -126,6 +142,11 @@ def api_convert():
     except json.JSONDecodeError:
         app.logger.exception("Gemini returned invalid JSON")
         return jsonify({"error": "返答をうまく読み取れませんでした。少し表現を変えて、もう一度お試しください。"}), 502
+    except errors.ServerError as exc:
+        app.logger.exception("Gemini service error")
+        if getattr(exc, "code", None) == 503:
+            return jsonify({"error": "Gemini側が一時的に混雑しています。少し待ってから、もう一度お試しください。"}), 503
+        return jsonify({"error": "Gemini側でエラーが発生しました。少し待ってから、もう一度お試しください。"}), 502
     except Exception as exc:
         app.logger.exception("Conversion failed")
         message = str(exc)
