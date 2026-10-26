@@ -2,7 +2,7 @@ import json
 import os
 import re
 
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, jsonify, render_template, request, send_from_directory
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
@@ -15,8 +15,11 @@ app = Flask(__name__)
 
 @app.get("/manifest.webmanifest")
 def static_manifest():
-    from flask import send_from_directory
-    return send_from_directory(app.root_path, "manifest.webmanifest", mimetype="application/manifest+json")
+    return send_from_directory(
+        app.root_path,
+        "manifest.webmanifest",
+        mimetype="application/manifest+json",
+    )
 app.config["MAX_CONTENT_LENGTH"] = 32 * 1024  # 32 KB request limit
 
 STYLE_INSTRUCTIONS = {
