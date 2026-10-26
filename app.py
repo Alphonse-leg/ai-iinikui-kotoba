@@ -13,6 +13,20 @@ APP_VERSION = "Ver.1.0"
 app = Flask(__name__)
 
 
+@app.get("/service-worker.js")
+def service_worker():
+    # A minimal no-cache worker endpoint prevents stale browser registrations
+    # from receiving a 404; it does not cache pages or API responses.
+    response = send_from_directory(
+        app.root_path,
+        "service-worker.js",
+        mimetype="application/javascript",
+        max_age=0,
+    )
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    return response
+
+
 @app.get("/manifest.webmanifest")
 def static_manifest():
     return send_from_directory(
