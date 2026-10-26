@@ -11,11 +11,13 @@ load_dotenv()
 
 APP_VERSION = "Ver.1.0"
 app = Flask(__name__)
-app.config["MAX_CONTENT_LENGTH"] = 32 * 1024  # 32 KB request limit
 
-# Keep Gemini requests shorter than the Gunicorn worker timeout.
-# Google Gen AI SDK HttpOptions.timeout is expressed in milliseconds.
-GEMINI_REQUEST_TIMEOUT_MS = int(os.getenv("GEMINI_REQUEST_TIMEOUT_MS", "25000"))
+
+@app.get("/manifest.webmanifest")
+def static_manifest():
+    from flask import send_from_directory
+    return send_from_directory(app.root_path, "manifest.webmanifest", mimetype="application/manifest+json")
+app.config["MAX_CONTENT_LENGTH"] = 32 * 1024  # 32 KB request limit
 
 STYLE_INSTRUCTIONS = {
     "business": "丁寧・ビジネス向け。礼儀正しく、失礼のない自然な表現。",
@@ -30,7 +32,7 @@ def convert_phrase(user_text: str) -> dict:
     if not api_key:
         raise RuntimeError("GEMINI_API_KEY が設定されていません。.env または環境変数を確認してください。")
 
-    model_name = os.getenv("GEMINI_MODEL", "gemini-3.8-flash").strip()
+    model_name = os.getenv("GEMINI_MODEL", "gemini-2.5-flash").strip()
     prompt = f"""
 あなたは「言い換え名人の猫」です。
 ユーザーの本音や言いにくい言葉を否定せず受け止め、相手に伝わりやすい自然な日本語に言い換えてください。
@@ -56,10 +58,7 @@ def convert_phrase(user_text: str) -> dict:
 }}
 """.strip()
 
-    client = genai.Client(
-        api_key=api_key,
-        http_options=types.HttpOptions(timeout=GEMINI_REQUEST_TIMEOUT_MS),
-    )
+    client = genai.Client(api_key=api_key)
     try:
         response = client.models.generate_content(
             model=model_name,
@@ -70,6 +69,7 @@ def convert_phrase(user_text: str) -> dict:
             ),
         )
         raw = (response.text or "").strip()
+        # Defensive cleanup in case a model returns fenced JSON despite the JSON mode.
         raw = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw, flags=re.IGNORECASE)
         data = json.loads(raw)
         result = {}
@@ -111,10 +111,11 @@ def api_convert():
         return jsonify({"error": "返答をうまく読み取れませんでした。少し表現を変えて、もう一度お試しください。"}), 502
     except Exception as exc:
         app.logger.exception("Conversion failed")
-        if "GEMINI_API_KEY" in str(exc):
-            safe_message = "APIキーが設定されていません。Renderの環境変数を確認してください。"
+        message = str(exc)
+        if "GEMINI_API_KEY" in message:
+            safe_message = message
         else:
-            safe_message = "変換に失敗しました。時間をおいて再度お試しください。"
+            safe_message = "変換に失敗しました。通信状況やAPI設定を確認して、もう一度お試しください。"
         return jsonify({"error": safe_message}), 500
 
 
