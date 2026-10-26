@@ -13,6 +13,10 @@ APP_VERSION = "Ver.1.0"
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 32 * 1024  # 32 KB request limit
 
+# Keep Gemini requests shorter than the Gunicorn worker timeout.
+# Google Gen AI SDK HttpOptions.timeout is expressed in milliseconds.
+GEMINI_REQUEST_TIMEOUT_MS = int(os.getenv("GEMINI_REQUEST_TIMEOUT_MS", "25000"))
+
 STYLE_INSTRUCTIONS = {
     "business": "丁寧・ビジネス向け。礼儀正しく、失礼のない自然な表現。",
     "gentle": "やさしい断り方。相手への配慮を示しつつ、無理なことは明確に伝える。",
@@ -52,7 +56,10 @@ def convert_phrase(user_text: str) -> dict:
 }}
 """.strip()
 
-    client = genai.Client(api_key=api_key)
+    client = genai.Client(
+        api_key=api_key,
+        http_options=types.HttpOptions(timeout=GEMINI_REQUEST_TIMEOUT_MS),
+    )
     try:
         response = client.models.generate_content(
             model=model_name,
@@ -63,7 +70,6 @@ def convert_phrase(user_text: str) -> dict:
             ),
         )
         raw = (response.text or "").strip()
-        # Defensive cleanup in case a model returns fenced JSON despite the JSON mode.
         raw = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw, flags=re.IGNORECASE)
         data = json.loads(raw)
         result = {}
@@ -105,11 +111,10 @@ def api_convert():
         return jsonify({"error": "返答をうまく読み取れませんでした。少し表現を変えて、もう一度お試しください。"}), 502
     except Exception as exc:
         app.logger.exception("Conversion failed")
-        message = str(exc)
-        if "GEMINI_API_KEY" in message:
-            safe_message = message
+        if "GEMINI_API_KEY" in str(exc):
+            safe_message = "APIキーが設定されていません。Renderの環境変数を確認してください。"
         else:
-            safe_message = "変換に失敗しました。通信状況やAPI設定を確認して、もう一度お試しください。"
+            safe_message = "変換に失敗しました。時間をおいて再度お試しください。"
         return jsonify({"error": safe_message}), 500
 
 
